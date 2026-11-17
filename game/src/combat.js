@@ -21,6 +21,7 @@ export class Combat {
     this.tracer = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffe066 }));
     this.tracer.visible = false; scene.add(this.tracer);
     this._tracerT = 0;
+    this._shotLog = [];
   }
   spawnEnemy(x, z, hp) {
     const built = makePerson(0x8a2a2a, 0x222222, 0xb98a6a);
@@ -41,32 +42,67 @@ export class Combat {
     for (const e of this.enemies) { this.scene.remove(e.group); this.scene.remove(e.hpBar); }
     this.enemies = [];
   }
-  // Shoot a hitscan ray from the camera. Returns {hit, enemy, point} or null.
+  // Shoot a hitscan ray at torso height along the camera's horizontal aim
+  // direction. (A ray straight from the high chase camera dives into the
+  // ground before it reaches anyone, so the shot is taken from the player's
+  // chest instead — what the crosshair points at is what gets hit.)
   shoot(camera, playerPos, onEnemyDown) {
     if (this.ammo <= 0) return { empty: true };
     this.ammo -= 1;
-    this.raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    const origin = new THREE.Vector3(playerPos.x, 1.35, playerPos.z);
+    const aim = origin.clone().add(dir.clone().multiplyScalar(40));
+    aim.y = 1.35;
+    const flat = aim.sub(origin).normalize();
+    this.raycaster.set(origin, flat);
+    this.raycaster.far = 70;
     const meshes = [];
     for (const e of this.enemies) e.group.traverse((o) => { if (o.isMesh) { o.userData.enemy = e; meshes.push(o); } });
     const hits = this.raycaster.intersectObjects(meshes, false);
-    const origin = camera.position.clone();
-    let point = origin.clone().add(this.raycaster.ray.direction.clone().multiplyScalar(60));
+    let point = origin.clone().add(flat.clone().multiplyScalar(60));
     let hitEnemy = null;
     if (hits.length > 0) {
       const h = hits[0];
       point = h.point;
       if (h.object.userData.enemy) {
         hitEnemy = h.object.userData.enemy;
-        hitEnemy.hp -= 34;
-        if (hitEnemy.hp <= 0) {
-          this.scene.remove(hitEnemy.group); this.scene.remove(hitEnemy.hpBar);
-          this.enemies = this.enemies.filter((e) => e !== hitEnemy);
-          onEnemyDown && onEnemyDown(hitEnemy);
-        }
       }
     }
+    // Arcade aim assist: the ray is a line, but a target just off it still
+    // counts — take the nearest enemy within 1.3 units of the shot line.
+    if (!hitEnemy) {
+      let best = null, bestD = 1.3;
+      for (const e of this.enemies) {
+        const toE = new THREE.Vector3(e.pos.x - origin.x, 0, e.pos.z - origin.z);
+        const along = toE.dot(flat);
+        if (along < 1 || along > 45) continue;
+        const perp = toE.clone().addScaledVector(flat, -along).length();
+        if (perp < bestD) { bestD = perp; best = e; }
+      }
+      if (best) { hitEnemy = best; point = new THREE.Vector3(best.pos.x, 1.35, best.pos.z); }
+    }
+    if (hitEnemy) {
+      hitEnemy.hp -= 34;
+      if (hitEnemy.hp <= 0) {
+        this.scene.remove(hitEnemy.group); this.scene.remove(hitEnemy.hpBar);
+        this.enemies = this.enemies.filter((e) => e !== hitEnemy);
+        onEnemyDown && onEnemyDown(hitEnemy);
+      }
+    }
+    this._shotLog.push({ hit: !!hitEnemy, ammo: this.ammo, enemies: this.enemies.length,
+      rayHits: hits.length, rayFirst: hits.length ? (hits[0].object.userData.enemy ? 'enemy' : hits[0].object.type) : null,
+      origin: [+origin.x.toFixed(1), +origin.y.toFixed(2), +origin.z.toFixed(1)],
+      flat: [+flat.x.toFixed(2), +flat.y.toFixed(2), +flat.z.toFixed(2)],
+      nearest: this.enemies.map((e) => {
+        const toE = new THREE.Vector3(e.pos.x - origin.x, 0, e.pos.z - origin.z);
+        const along = toE.dot(flat);
+        const perp = toE.clone().addScaledVector(flat, -along).length();
+        return { along: +along.toFixed(1), perp: +perp.toFixed(2), hp: e.hp };
+      }),
+    });
     // muzzle flash + tracer
-    this.flash.position.copy(origin).add(this.raycaster.ray.direction.clone().multiplyScalar(1.2));
+    this.flash.position.copy(origin).add(flat.clone().multiplyScalar(1.2));
     this.flash.visible = true; this._flashT = 0.06;
     const pos = this.tracer.geometry.attributes.position;
     pos.setXYZ(0, origin.x, origin.y, origin.z);

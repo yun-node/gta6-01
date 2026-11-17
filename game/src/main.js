@@ -4,9 +4,9 @@ import * as THREE from 'three';
 import { mulberry32 } from './utils.js';
 import { Input } from './input.js';
 import { AudioSys } from './audio.js';
-import { buildCity, Car } from './city.js';
+import { buildCity } from './city.js';
 import { Player } from './player.js';
-import { VehicleManager } from './vehicles.js';
+import { VehicleManager, Car } from './vehicles.js';
 import { Traffic } from './traffic.js';
 import { Pedestrians } from './pedestrians.js';
 import { Police } from './police.js';
@@ -102,7 +102,7 @@ const missionHooks = {
     if (m.setup === 'shootout') {
       const base = m.target;
       for (let i = 0; i < (m.enemies || 4); i++) {
-        combat.spawnEnemy(base.x + (rng() - 0.5) * 24, base.z + (rng() - 0.5) * 24, 60);
+        combat.spawnEnemy(base.x + (rng() - 0.5) * 10, base.z + (rng() - 0.5) * 10, 60);
       }
     }
     if (m.setup === 'chase') {
@@ -154,7 +154,6 @@ function startGame(fromSave) {
   if (missions.index < MISSIONS.length) {
     hud.toast(MISSIONS[missions.index].brief, 5000);
   }
-  stageShot();
 }
 
 function bustPlayer() {
@@ -224,12 +223,17 @@ function stageShot() {
     car.mesh.position.copy(car.pos); car.mesh.rotation.y = car.yaw;
     enterCar(car);
     police.setWanted(3);
+    // a police car head-on ahead of the player so the chase reads in frame
+    const pc = vehicles.addPoliceCar(2, 22); pc.yaw = 0;
+    police.chasers.push(pc);
+    const pc2 = vehicles.addPoliceCar(-10, 38); pc2.yaw = Math.PI / 2;
+    police.chasers.push(pc2);
     startMission(4);
     return;
   }
   if (shot === 'mission') {
     // Dockside shootout: Rico on foot, enemies in sight, 2 stars.
-    player.pos.set(-84, 0, 132); player.camYaw = Math.PI * 0.78;
+    player.pos.set(-96, 0, 144); player.camYaw = -0.8;
     police.setWanted(2);
     startMission(3);
     return;
@@ -322,9 +326,9 @@ function frame() {
     () => { audio.crash(); });
   combat.update(dt, pos, player.health > 0, (enemy, d) => {
     // enemy fire: hit chance falls with distance
-    if (Math.random() < (d < 15 ? 0.55 : d < 30 ? 0.3 : 0.15)) {
+    if (Math.random() < (d < 15 ? 0.45 : d < 30 ? 0.25 : 0.12)) {
       audio.enemyShoot();
-      if (player.damage(6 + Math.random() * 6)) wastePlayer();
+      if (player.damage(5 + Math.random() * 5)) wastePlayer();
     }
   });
 
@@ -382,8 +386,32 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
+// Debug hooks used by the automated playtest (harmless in normal play).
+window.__state = () => ({ state: G.state, inCar: G.inCar, wanted: police.wanted,
+  chasers: police.chasers.length, money: Math.round(G.money), health: Math.round(player.health),
+  mission: missions.active ? missions.active.def.name : null,
+  px: Math.round(playerPos().x), pz: Math.round(playerPos().z),
+  speed: G.inCar && vehicles.driven ? Math.round(vehicles.driven.speed) : 0 });
+window.__pos = () => ({ x: playerPos().x, z: playerPos().z });
+window.__testTeleport = (x, z) => { if (G.inCar) exitCar(); player.pos.set(x, 0, z); player.mesh.position.copy(player.pos); };
+window.__testDriveTo = (x, z) => {
+  if (G.inCar && vehicles.driven) {
+    vehicles.driven.pos.set(x, 0, z);
+    vehicles.driven.mesh.position.copy(vehicles.driven.pos);
+  }
+};
+window.__testWanted = (n) => police.setWanted(n);
+window.__enemies = () => combat.enemies.map((e) => ({ x: +e.pos.x.toFixed(1), z: +e.pos.z.toFixed(1), hp: e.hp }));
+window.__shots = () => combat._shotLog.slice();
+window.__aim = () => {
+  const d = new THREE.Vector3(); camera.getWorldDirection(d);
+  return { camYaw: +player.camYaw.toFixed(2), px: +player.pos.x.toFixed(1), pz: +player.pos.z.toFixed(1),
+    camPos: [+camera.position.x.toFixed(1), +camera.position.y.toFixed(1), +camera.position.z.toFixed(1)],
+    fwd: [+d.x.toFixed(2), +d.y.toFixed(2), +d.z.toFixed(2)] };
+};
+
 // Screenshot staging (?shot=chase|street|mission) auto-starts the game so a
 // headless render shows live play; ?shot=menu stays on the start screen.
-if (shot && shot !== 'menu') startGame(false);
+if (shot && shot !== 'menu') { startGame(false); stageShot(); }
 
 frame();

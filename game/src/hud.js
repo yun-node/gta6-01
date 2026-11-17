@@ -32,7 +32,7 @@ export class HUD {
     clearTimeout(this._toastT);
     this._toastT = setTimeout(() => { this.el.toast.style.opacity = '0'; }, ms || 2400);
   }
-  setHint(text) { this.el.hint.textContent = text || ''; }
+  setHint(text) { this.el.hint.textContent = text || ''; this.el.hint.style.display = text ? '' : 'none'; }
   update(state) {
     this.el.money.innerHTML = `$${Math.round(state.money).toLocaleString()} <small>SOLMAR</small>`;
     let stars = '';

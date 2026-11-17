@@ -1,8 +1,8 @@
 // vehicles.js — drivable cars: arcade physics, parked cars to steal,
 // entering/exiting, and simple car-vs-building collision.
 import * as THREE from 'three';
-import { clamp, collideCircle, inCityBounds, angleLerp, dist2D } from './utils.js';
-import { makeCar, randomCarColor, ROAD_SPACING, CITY_EXTENT } from './city.js';
+import { clamp, angleLerp, dist2D } from './utils.js';
+import { makeCar, randomCarColor, collideCircle, inCityBounds, ROAD_SPACING, CITY_EXTENT } from './city.js';
 
 export class Car {
   constructor(scene, x, z, yaw, color, opts = {}) {

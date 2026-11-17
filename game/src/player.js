@@ -1,8 +1,8 @@
 // player.js — Rico Vane on foot: WASD movement relative to camera yaw,
 // sprint, walk animation, health, and the third-person camera rig.
 import * as THREE from 'three';
-import { clamp, collideCircle, inCityBounds } from './utils.js';
-import { makePerson } from './city.js';
+import { clamp } from './utils.js';
+import { makePerson, collideCircle, inCityBounds } from './city.js';
 
 export class Player {
   constructor(scene) {
